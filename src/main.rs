@@ -55,6 +55,13 @@ fn measure(q: &Qubit) -> bool {
     r >= p0
 }
 
+fn measure_complex(q: Complex<f64>) -> bool {
+    let p0 = q.norm_sqr();
+    let mut rng = rand::thread_rng();
+    let r: f64 = rng.r#gen();
+    r >= p0
+}
+
 fn apply_hadamard(wavefunction: &mut Vec<Complex<f64>>, target: usize, n_qubits: usize) {
     let size = wavefunction.len();
     let mut new_state = wavefunction.clone();
@@ -73,7 +80,7 @@ fn apply_hadamard(wavefunction: &mut Vec<Complex<f64>>, target: usize, n_qubits:
     *wavefunction = new_state;
 }
 
-fn apply_cnot(wavefunction: &mut Vec<Complex<f64>>, control: usize, target: usize, n_qubits: usize) {
+fn apply_cnot(wavefunction: &mut Vec<Complex<f64>>, control: usize, target: usize) {
     let size = wavefunction.len();
     let mut new_state = wavefunction.clone();
 
@@ -92,7 +99,56 @@ fn apply_cnot(wavefunction: &mut Vec<Complex<f64>>, control: usize, target: usiz
 fn create_bell_pair(wavefunction: &mut Vec<Complex<f64>>, q1: usize, q2: usize) {
     wavefunction[0] = Complex::new(1.0, 0.0);
     apply_hadamard(wavefunction, q1, wavefunction.len());
-    apply_cnot(wavefunction, q1, q2, wavefunction.len());
+    apply_cnot(wavefunction, q1, q2);
+}
+
+fn cz_gate(wavefunction: &mut Vec<Complex<f64>>, q1: usize, q2: usize) {
+    let n = wavefunction.len();
+    for i in 1..n {
+        if ((i >> q1) == 1) && ((i >> q2) == 1) {
+            wavefunction[i] *= Complex::new(-1.0,0.0);
+        }
+    }
+}
+
+fn wavefunction_collapse(wavefunction: &mut Vec<Complex<f64>>, q: usize) {
+    let s = measure_complex(wavefunction[q]) as usize;
+    
+}
+
+fn swap_qubits(wavefunction: &mut Vec<Complex<f64>>, q1: usize, q2: usize) {
+    let n = wavefunction.len();
+    let mut new_state = wavefunction.clone();
+
+    for i in 0..n {
+        let bit1 = (i >> q1) & 1;
+        let bit2 = (i >> q2) & 1;
+        let swapped_index = i ^ ((bit1 ^ bit2) << q1) ^ ((bit1 ^ bit2) << q2);
+        new_state[swapped_index] = wavefunction[i];
+    }
+
+    *wavefunction = new_state;
+}
+
+// Quantum Fourier Transform
+// Simulated: O(n^2 * 2^n) where n = number of qubits
+fn qft(wavefunction: &mut Vec<Complex<f64>>, n_qubits: usize) {
+    for i in 0..n_qubits {
+        apply_hadamard(wavefunction, i, n_qubits);
+        for j in (i + 1)..n_qubits {
+            let angle = f64::from(2) * PI / f64::from(1 << (j - i + 1) as u32);
+            let phase = Complex::new(0.0, angle).exp();
+            for k in 0..wavefunction.len() {
+                if ((k >> i) & 1) == 1 && ((k >> j) & 1) == 1 {
+                    wavefunction[k] *= phase;
+                }
+            }
+        }
+    }
+
+    for i in 0..n_qubits / 2 {
+        swap_qubits(wavefunction, i, n_qubits - i - 1);
+    }
 }
 
 fn main() {
@@ -100,6 +156,12 @@ fn main() {
     let mut wavefunction: Vec<Complex<f64>> = vec![Complex::new(0.0, 0.0); 1 << n]; // 2^n states |000> |001> etc
 
     create_bell_pair(&mut wavefunction, 0, 1);
+    for (i, amp) in wavefunction.iter().enumerate() {
+        println!("|{:02b}⟩: {:?}", i, amp);
+    }
+
+    qft(&mut wavefunction, n);
+    println!("\nAfter QFT:");
     for (i, amp) in wavefunction.iter().enumerate() {
         println!("|{:02b}⟩: {:?}", i, amp);
     }
